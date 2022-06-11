@@ -10,114 +10,198 @@ from RF24 import RF24_CRC_16, RF24_CRC_8, RF24_CRC_DISABLED
 from RF24 import RF24 as RF24_CLASS
 
 
-radio1=RF24_CLASS(22, 0)
-#radio2=RF24_CLASS(24, 1)
+radio=RF24_CLASS(24, 1)
 
 
-def generate_logfile_name():
+def generate_logfile_name(packet_type):
 	now = datetime.datetime.utcnow().replace(microsecond=0)
-	isostring = now.isoformat()  # string 2021-04-27T23:17:31
-	isostring = isostring.replace("-", "")  # string 20210427T23:17:31
-	isostring = isostring.replace(":", "")  # string 20210427T231731, oi ?oi iaai
-	return "kt315-" + isostring + ".bin"
+	isostring = now.isoformat().replace('-', '').replace(':', '')
+	if packet_type == 0:
+		packet_type_name = 'dosimeter.csv'
+	elif packet_type == 1:
+		packet_type_name = 'bmp.csv'
+	elif packet_type == 2:
+		packet_type_name = 'ds.csv'
+	elif packet_type == 3:
+		packet_type_name = 'gps.csv'
+	elif packet_type == 4:
+		packet_type_name = 'inertial.csv'
+	elif packet_type == 5:
+		packet_type_name = 'sebastian.csv'
+	elif packet_type == -1:
+		packet_type_name = 'all.bin'
+	return f'telemetry/kt315_telemetry_{isostring}_{packet_type_name}'
 
 
 if __name__ == '__main__':
-	#static_payload_size = None
-	static_payload_size = 26
-
-	radio1.begin()
-
-	radio1.openReadingPipe(1, b'\xac\xac\xac\xac\xac')
-
-	radio1.setCRCLength(RF24_CRC_DISABLED)
-	radio1.setAddressWidth(5)
-	radio1.channel = 116
-	radio1.setDataRate(RF24_250KBPS)
-
-	radio1.setAutoAck(False)
+	static_payload_size = None
 
 
-	radio1.enableAckPayload()
-	radio1.enableDynamicAck()
+	radio.begin()
+
+	radio.openReadingPipe(1, b'\xac\xac\xac\xac\xac')
+
+	radio.setCRCLength(RF24_CRC_DISABLED)
+	radio.setAddressWidth(5)
+	radio.channel = 115
+	radio.setDataRate(RF24_250KBPS)
+
+	radio.setAutoAck(True)
+
+
+
+	radio.enableAckPayload()
+	radio.enableDynamicAck()
 
 	if static_payload_size is not None:
-		radio1.disableDynamicPayloads()
-		radio1.payloadSize = static_payload_size
+		radio.disableDynamicPayloads()
+		radio.payloadSize = static_payload_size
 	else:
-		radio1.enableDynamicPayloads()
+		radio.enableDynamicPayloads()
 
+	radio.startListening()
+	radio.printDetails()
 
-	radio1.startListening()
-	radio1.printDetails()
+	filename = generate_logfile_name(-1)
+	filename_dosimeter = generate_logfile_name(0)
+	filename_bmp = generate_logfile_name(1)
+	filename_ds = generate_logfile_name(2)
+	filename_gps = generate_logfile_name(3)
+	filename_inertial = generate_logfile_name(4)
+	filename_sebastian = generate_logfile_name(5)
 
+	file = open(filename, 'wb')
+	file_dosimeter = open(filename_dosimeter, 'wb')
+	file_dosimeter.write(b'ticks per last second;ticks per last minute;ticks sum\n')
+	file_dosimeter.flush()
+	file_bmp = open(filename_bmp, 'wb')
+	file_bmp.write(b'bmp_temperature;bmp_pressure\n')
+	file_bmp.flush()
+	file_ds = open(filename_ds, 'wb')
+	file_ds.write(b'ds_temperature;rocket lux;seed lux;status\n')
+	file_ds.flush()
+	file_gps = open(filename_gps, 'wb')
+	file_gps.write(b'longtitude;latitude;altitude;time_sec;time_microsec;fix\n')
+	file_gps.flush()
+	file_inertial = open(filename_inertial, 'wb')
+	file_inertial.write(b'lsm_acc_x;lsm_acc_y;lsm_acc_z;lsm_gyro_x;lsm_gyro_y;lsm_gyro_z;lis_mag_x;lis_mag_y;lis_mag_z;\n')
+	file_inertial.flush()
+	file_sebastian = open(filename_sebastian, 'wb')
+	file_sebastian.write(b'quaternion 1;quaternion 2;quaternion 3;quaternion 4\n')
+	file_sebastian.flush()
 
-	filename = generate_logfile_name()
-	f = open(filename, 'wb')
 
 	COUNTER = 0
 	LOSS = 0
 	PREV_PACKET_NUMBER = None
 	while True:
-		has_payload, pipe_number = radio1.available_pipe()
+		has_payload, pipe_number = radio.available_pipe()
 		if has_payload:
 			payload_size = static_payload_size
 			if payload_size is None:
-				payload_size = radio1.getDynamicPayloadSize()
+				payload_size = radio.getDynamicPayloadSize()
 				print(payload_size)
 
-			data = radio1.read(payload_size)
-			print('\n\ngot data %s' % data)
-			packet_size = len(data)
-			biter = struct.pack(">B", packet_size)
-			unix = time.time()
-			p_unix = struct.pack("<d", unix)
-			record = biter + data + p_unix
+			package = radio.read(payload_size)
+			print(f'got data {package}')
+			file.write(package)
+			file.flush()		
 			
-
+			package_service = package[:7]
+			package_crc = package[len(package) - 2:]
+			package_data = package[7:len(package) - 2]
 			try:
-				unpacked = struct.unpack("<2B6hH2IH", data)
+				unpacked_service = struct.unpack('<BHL', package_service)
 			except Exception as e:
-				print(e)
-				print(("data received: "),len(data), "bytes")
+				print(f'{e}\ndata received: {len(package)} bytes')
 			else:
+				try:
+					unpacked_crc = struct.unpack('<H', package_crc)
+				except Exception as e:
+					print(f'{e}\ndata received: {len(package)} bytes')
+				else:
+					if unpacked_service[0] == 0:
+						try:
+							unpacked_data = struct.unpack('<LLL', package_data)
+						except Exception as e:
+							print(f'{e}\ndata received: {len(package)} bytes')
+						else:
+							ticks_per_last_second = unpacked_data[0]
+							ticks_per_last_minute = unpacked_data[1]
+							ticks_sum = unpacked_data[2]
+							file_dosimeter.write(bytes(f'{ticks_per_last_second};{ticks_per_last_minute};{ticks_sum}\n', 'utf-8'))
+							file_dosimeter.flush()
 
-				flag = unpacked[0]
-				bmp_temperature = unpacked[1] / 10
-				acc_x = unpacked[2] / 1000
-				acc_y = unpacked[3] / 1000
-				acc_z = unpacked[4] / 1000
-				gyro_x = unpacked[5] / 1000
-				gyro_y = unpacked[6] / 1000
-				gyro_z = unpacked[7] / 1000
-				num = unpacked[8]
-				time_from_start = unpacked[9]
-				bmp_pressure = unpacked[10]
-				crc = unpacked[11]
+					elif unpacked_service[0] == 1:
+						try:
+							unpacked_data = struct.unpack('<hL', package_data)
+						except Exception as e:
+							print(f'{e}\ndata received: {len(package)} bytes')
+						else:
+							bmp_temperature = unpacked_data[0]
+							bmp_pressure = unpacked_data[1]
+							file_bmp.write(bytes(f'{bmp_temperature};{bmp_pressure}\n', 'utf-8'))
+							file_bmp.flush()
 
-				if PREV_PACKET_NUMBER is not None:
-					if (PREV_PACKET_NUMBER + 1 )& 0xFFFF != num:
-						LOSS += num - PREV_PACKET_NUMBER - 1
-					COUNTER += num - PREV_PACKET_NUMBER
-				PREV_PACKET_NUMBER = num
-				
+					elif unpacked_service[0] == 2:
+						try:
+							unpacked_data = struct.unpack('<fffB', package_data)
+						except Exception as e:
+							print(f'{e}\ndata received: {len(package)} bytes')
+						else:
+							ds_temperature = unpacked_data[0]
+							rckt_lux = unpacked_data[1]
+							seed_lux = unpacked_data[2]
+							status = unpacked_data[3]
+							file_ds.write(bytes(f'{ds_temperature};{rckt_lux};{seed_lux};{status}\n', 'utf-8'))
+							file_ds.flush()
+
+					elif unpacked_service[0] == 3:
+						try:
+							unpacked_data = struct.unpack('<ffhLLB', package_data)
+						except Exception as e:
+							print(f'{e}\ndata received: {len(package)} bytes')
+						else:
+							longtitude = unpacked_data[0]
+							latitude = unpacked_data[1]
+							altitude = unpacked_data[2]
+							time_sec = unpacked_data[3]
+							time_microsec = unpacked_data[4]
+							fix = unpacked_data[5]
+							file_gps.write(bytes(f'{longtitude};{latitude};{altitude};{time_sec};{time_microsec};{fix}\n', 'utf-8'))
+							file_gps.flush()
+
+					elif unpacked_service[0] == 4:
+						try:
+							unpacked_data = struct.unpack('<hhhhhhhhh', package_data)
+						except Exception as e:
+							print(f'{e}\ndata received: {len(package)} bytes')
+						else:
+							lsm_acc = unpacked_data[:3]
+							lsm_gyro = unpacked_data[3:6]
+							lis_mag = unpacked_data[6:]
+							file_inertial.write(bytes(f'{lsm_acc[0] / 2000};{lsm_acc[1] / 2000};{lsm_acc[2] / 2000};{lsm_gyro[0] / 15};{lsm_gyro[1] / 15};{lsm_gyro[2] / 15};{lis_mag[0] / 2000};{lis_mag[1] / 2000};{lis_mag[2] / 2000};\n', 'utf-8'))
+							file_inertial.flush()
+
+					elif unpacked_service[0] == 5:
+						try:
+							unpacked_data = struct.unpack('<ffff', package_data)
+						except Exception as e:
+							print(f'{e}\ndata received: {len(package)} bytes')
+						else:
+							quaternion = unpacked_data
+							file_sebastian.write(bytes(f'{quaternion[0]};{quaternion[1]};{quaternion[2]};{quaternion[3]}\n', 'utf-8'))
+							file_sebastian.flush()
+
+					if PREV_PACKET_NUMBER is not None:
+						if (PREV_PACKET_NUMBER + 1) & 0xFFFF != num:
+							LOSS += 1
+						PREV_PACKET_NUMBER = num
+					COUNTER += 1
 
 
-				print("\nPressure: ", bmp_pressure)
-				print("Temperature: ", bmp_temperature)
-				print("Time: ", time_from_start)
-				print("Accelerometer_y: " , acc_y)
-				print("Accelerometer_z: ", acc_z)
-				print("Accelerometer_x: ", acc_x)
-				print("Gyroscope_x: ", gyro_x)
-				print("Gyroscope_y: ", gyro_y)
-				print("Gyroscope_z: ", gyro_z)
-				print("Number_packet: ", num)
-				print(f"LOSS = {LOSS}, COUNTER = {COUNTER}, LOSS PERCENT = {int(LOSS / COUNTER * 10000) / 100 if COUNTER > 0 else 0}%")
-
-			f.write(record)
-			f.flush()
+				print(f'LOSS = {LOSS}, COUNTER = {COUNTER}, LOSS PERCENT = {LOSS / COUNTER * 100}%')
 		else:
 			pass
 
-		#time.sleep(0.005)
+		time.sleep(0.005)
