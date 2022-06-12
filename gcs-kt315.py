@@ -75,16 +75,16 @@ if __name__ == '__main__':
 	file_dosimeter.write(b'ticks per last second;ticks per last minute;ticks sum\n')
 	file_dosimeter.flush()
 	file_bmp = open(filename_bmp, 'wb')
-	file_bmp.write(b'bmp_temperature;bmp_pressure\n')
+	file_bmp.write(b'bmp temperature;bmp pressure;status\n')
 	file_bmp.flush()
 	file_ds = open(filename_ds, 'wb')
-	file_ds.write(b'ds_temperature;rocket lux;seed lux;status\n')
+	file_ds.write(b'ds temperature;rocket lux;seed lux\n')
 	file_ds.flush()
 	file_gps = open(filename_gps, 'wb')
-	file_gps.write(b'longtitude;latitude;altitude;time_sec;time_microsec;fix\n')
+	file_gps.write(b'longtitude;latitude;altitude;time sec;time microsec;fix\n')
 	file_gps.flush()
 	file_inertial = open(filename_inertial, 'wb')
-	file_inertial.write(b'lsm_acc_x;lsm_acc_y;lsm_acc_z;lsm_gyro_x;lsm_gyro_y;lsm_gyro_z;lis_mag_x;lis_mag_y;lis_mag_z;\n')
+	file_inertial.write(b'lsm acc x;lsm acc y;lsm acc z;lsm gyro x;lsm gyro y;lsm gyro z;lis mag x;lis mag y;lis mag z;\n')
 	file_inertial.flush()
 	file_sebastian = open(filename_sebastian, 'wb')
 	file_sebastian.write(b'quaternion 1;quaternion 2;quaternion 3;quaternion 4\n')
@@ -100,7 +100,7 @@ if __name__ == '__main__':
 			payload_size = static_payload_size
 			if payload_size is None:
 				payload_size = radio.getDynamicPayloadSize()
-				print(payload_size)
+				print(f'\n{payload_size}')
 
 			package = radio.read(payload_size)
 			print(f'got data {package}')
@@ -134,33 +134,33 @@ if __name__ == '__main__':
 
 					elif unpacked_service[0] == 1:
 						try:
-							unpacked_data = struct.unpack('<hL', package_data)
+							unpacked_data = struct.unpack('<ddB', package_data)
 						except Exception as e:
 							print(f'{e}\ndata received: {len(package)} bytes')
 						else:
 							bmp_temperature = unpacked_data[0]
 							bmp_pressure = unpacked_data[1]
-							file_bmp.write(bytes(f'{bmp_temperature};{bmp_pressure}\n', 'utf-8'))
+							status = unpacked_data[2]
+							file_bmp.write(bytes(f'{bmp_temperature};{bmp_pressure};{status}\n', 'utf-8'))
 							file_bmp.flush()
 
 					elif unpacked_service[0] == 2:
 						try:
-							unpacked_data = struct.unpack('<fffB', package_data)
+							unpacked_data = struct.unpack('<fff', package_data)
 						except Exception as e:
 							print(f'{e}\ndata received: {len(package)} bytes')
 						else:
 							ds_temperature = unpacked_data[0]
 							rckt_lux = unpacked_data[1]
 							seed_lux = unpacked_data[2]
-							status = unpacked_data[3]
-							file_ds.write(bytes(f'{ds_temperature};{rckt_lux};{seed_lux};{status}\n', 'utf-8'))
+							file_ds.write(bytes(f'{ds_temperature};{rckt_lux};{seed_lux}\n', 'utf-8'))
 							file_ds.flush()
 
 					elif unpacked_service[0] == 3:
 						try:
-							unpacked_data = struct.unpack('<ffhLLB', package_data)
+							unpacked_data = struct.unpack('<fffLLB', package_data)
 						except Exception as e:
-							print(f'{e}\ndata received: {len(package)} bytes')
+							print(f'{e}\ndata received: {len(package_data)} bytes')
 						else:
 							longtitude = unpacked_data[0]
 							latitude = unpacked_data[1]
